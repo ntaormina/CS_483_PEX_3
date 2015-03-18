@@ -2,9 +2,87 @@
 #include "CPUs.h"
 #include "processQueue.h"
 
+//C1C Nik Taormina
+//Documentation: The only help I recieved was the suggestion to use a helper node to traverse the queue by C1C Miller
+// I was advised that changing the head node to next was not traversing but actually changing the head
+// I also recieved conceptual help from major Hancock on preemption and the idea to search through the queue
 
+//First Come First Served: This was the first part I implemented and all of the others are based on this one so I'll explain everything
+//in this one
 void* FCFScpu (void* param){
 
+ sharedVars* shared = ((cpuParams*)param)->svars;
+ int threadnum = ((cpuParams*)param)->threadNumber;
+ process* p = NULL;//helper process to only access queues in mutex locks
+
+ while(1){
+
+  sem_wait(&(shared->cpuSems[threadnum])); //wait until thread is signaled
+ 
+  if(p == NULL){
+
+   pthread_mutex_lock(&(shared->readyQLock));//enter critical section
+  
+   if((shared->readyQ).head != NULL){
+
+    int lowArrivalTime = 1000;
+    int index = 0;
+    int lowDex = 0; 
+  
+    node* search = (shared->readyQ).head;  //helper node to traverse or "search" the ready queue
+    p = (shared->readyQ).head->data;
+
+    while(search != NULL){     
+        
+     if((search->data->arrivalTime) < (lowArrivalTime)){   //if arrival time is less than the lowest one 
+      
+      lowArrivalTime = ((search->data->arrivalTime)); //new low arrival
+      p = search->data; //p set to soonest arrival process 
+      lowDex = index;
+
+     }
+
+     if(search->next != NULL){
+      search = search->next;
+     }else{
+      search = NULL;
+     }
+     index++;   
+     
+    }
+
+   p = Qremove((&(shared->readyQ)),lowDex);      //remove process from ready queue  
+   printf("Process %d has been scheduled\n", (p->PID));
+  } 
+ 
+  pthread_mutex_unlock(&(shared->readyQLock)); //exit critical section
+   
+ }
+  
+ if(p != NULL){
+   
+ 
+  p->burstRemaining = p->burstRemaining - 1;// simulates running process
+ 
+
+  if(p->burstRemaining==0){
+   
+   pthread_mutex_lock(&(shared->finishedQLock));
+    Qinsert(&(shared->finishedQ),p);    //add finished process to finished queue
+   pthread_mutex_unlock(&(shared->finishedQLock));
+
+   p = NULL;
+  			
+   }
+  }
+  sem_post(&(shared->mainSem));//signal main thread
+  
+
+  }
+ 
+}
+//Shortest Job First: I implemented this the same as FCFS but based on burst Total
+void* SJFcpu (void* param){
  sharedVars* shared = ((cpuParams*)param)->svars;
  int threadnum = ((cpuParams*)param)->threadNumber;
  process* p = NULL;
@@ -12,92 +90,11 @@ void* FCFScpu (void* param){
  while(1){
 
   sem_wait(&(shared->cpuSems[threadnum])); 
-  printf("made it 1 \n"); 
+   
   if(p == NULL){
 
    pthread_mutex_lock(&(shared->readyQLock));
-   printf("made it 2 \n");
-   if((shared->readyQ).head != NULL){
-    int lowArrivalTime = 100;
-    int index = 0;
-    int lowDex = 0; 
-    node* search = (shared->readyQ).head;  
-    p = (shared->readyQ).head->data;
-
-    while(search != NULL){
-     
-     printf("made it 3 \n");    
-     if((search->data->arrivalTime) < (lowArrivalTime)){    
-      printf("made it 4 \n");
-      lowArrivalTime = ((search->data->arrivalTime));
-      p = search->data;
-      lowDex = index;
-     }
-     if(search->next != NULL){
-      search = search->next;
-     }else{
-      search = NULL;
-     }
-         index++;   
-     
-     printf("made it 5 + index %d\n", index);
-   }
-
-      printf("made it 6 + lowdex %d\n", lowDex);
-      p = Qremove((&(shared->readyQ)),lowDex); 
-      printf("made it 7\n");  
-   
-  }  
-   pthread_mutex_unlock(&(shared->readyQLock)); 
-    printf("made it 8 \n");
-   
-    
   
-  }
-  
-   printf("made it 9 \n");
-
-  
-
-  if(p != NULL){
-   
-   printf("burstRemaining %d\n", p->burstRemaining);
-   p->burstRemaining = p->burstRemaining - 1;
- 
-
-  printf("made it 10 \n");
-   
-  if(p->burstRemaining==0){
-   printf("Process %d has been scheduled\n", (p->PID));
-   pthread_mutex_lock(&(shared->finishedQLock));
-    printf("made it 11 \n");
-    Qinsert(&(shared->finishedQ),p);    
-   pthread_mutex_unlock(&(shared->finishedQLock));
-
-   p = NULL;
-  			
-   }
-  }
-  sem_post(&(shared->mainSem));
-  
-
-  }
- 
-}
-
-void* SJFcpu (void* param){
-  sharedVars* shared = ((cpuParams*)param)->svars;
- int threadnum = ((cpuParams*)param)->threadNumber;
- process* p = NULL;
-
- while(1){
-
-  sem_wait(&(shared->cpuSems[threadnum])); 
-  printf("made it 1 \n"); 
-  if(p == NULL){
-
-   pthread_mutex_lock(&(shared->readyQLock));
-   printf("made it 2 \n");
    if((shared->readyQ).head != NULL){
     int lowBurst = 1000;
     int index = 0;
@@ -107,9 +104,9 @@ void* SJFcpu (void* param){
 
     while(search != NULL){
      
-     printf("made it 3 \n");    
+        
      if((search->data->burstTotal) < (lowBurst)){    
-      printf("made it 4 \n");
+     
       lowBurst = ((search->data->burstTotal));
       p = search->data;
       lowDex = index;
@@ -121,39 +118,27 @@ void* SJFcpu (void* param){
      }
          index++;   
      
-     printf("made it 5 + index %d\n", index);
-   }
-
-      printf("made it 6 + lowdex %d\n", lowDex);
+     
+   }     
       p = Qremove((&(shared->readyQ)),lowDex); 
-      printf("made it 7\n");  
-   
+      printf("Process %d has been scheduled\n", (p->PID));  
   }  
    pthread_mutex_unlock(&(shared->readyQLock)); 
-    printf("made it 8 \n");
-   
-    
-  
+     
   }
   
-   printf("made it 9 \n");
-
-  
-
+   
   if(p != NULL){
    
-   printf("burstRemaining %d\n", p->burstRemaining);
+   
    p->burstRemaining = p->burstRemaining - 1;
  
 
-  printf("made it 10 \n");
+   if(p->burstRemaining==0){
    
-  if(p->burstRemaining==0){
-   printf("Process %d has been scheduled\n", (p->PID));
-   pthread_mutex_lock(&(shared->finishedQLock));
-    printf("made it 11 \n");
-    Qinsert(&(shared->finishedQ),p);    
-   pthread_mutex_unlock(&(shared->finishedQLock));
+    pthread_mutex_lock(&(shared->finishedQLock));
+     Qinsert(&(shared->finishedQ),p);    
+    pthread_mutex_unlock(&(shared->finishedQLock));
 
    p = NULL;
   			
@@ -164,7 +149,7 @@ void* SJFcpu (void* param){
 
   }
 }
-
+//Non Preemptive Priority: I implemented this the same as FCFS but based on priority
 void* NPPcpu (void* param){
 
  sharedVars* shared = ((cpuParams*)param)->svars;
@@ -174,11 +159,11 @@ void* NPPcpu (void* param){
  while(1){
 
   sem_wait(&(shared->cpuSems[threadnum])); 
-  printf("made it 1 \n"); 
+  
   if(p == NULL){
 
    pthread_mutex_lock(&(shared->readyQLock));
-   printf("made it 2 \n");
+   
    if((shared->readyQ).head != NULL){
     int lowPriority = 100;
     int index = 0;
@@ -188,9 +173,9 @@ void* NPPcpu (void* param){
 
     while(search != NULL){
      
-     printf("made it 3 \n");    
+        
      if((search->data->priority) < (lowPriority)){    
-      printf("made it 4 \n");
+      
       lowPriority = ((search->data->priority));
       p = search->data;
       lowDex = index;
@@ -202,41 +187,29 @@ void* NPPcpu (void* param){
      }
          index++;   
      
-     printf("made it 5 + index %d\n", index);
+     
    }
 
-      printf("made it 6 + lowdex %d\n", lowDex);
+      
       p = Qremove((&(shared->readyQ)),lowDex); 
-      printf("made it 7\n");  
+      printf("Process %d has been scheduled\n", (p->PID)); 
    
   }  
    pthread_mutex_unlock(&(shared->readyQLock)); 
-    printf("made it 8 \n");
+     
+  }  
+
+  if(p != NULL){   
    
-    
-  
-  }
-  
-   printf("made it 9 \n");
+   p->burstRemaining = p->burstRemaining - 1; 
 
-  
-
-  if(p != NULL){
+   if(p->burstRemaining==0){
    
-   printf("burstRemaining %d\n", p->burstRemaining);
-   p->burstRemaining = p->burstRemaining - 1;
- 
+    pthread_mutex_lock(&(shared->finishedQLock));
+     Qinsert(&(shared->finishedQ),p);    
+    pthread_mutex_unlock(&(shared->finishedQLock));
 
-  printf("made it 10 \n");
-   
-  if(p->burstRemaining==0){
-   printf("Process %d has been scheduled\n", (p->PID));
-   pthread_mutex_lock(&(shared->finishedQLock));
-    printf("made it 11 \n");
-    Qinsert(&(shared->finishedQ),p);    
-   pthread_mutex_unlock(&(shared->finishedQLock));
-
-   p = NULL;
+    p = NULL;
   			
    }
   }
@@ -246,7 +219,10 @@ void* NPPcpu (void* param){
   }
 }
 
+
+//Round Robin: I implemented this as the same as FCFS but with a quantum
 void* RRcpu (void* param){
+
 sharedVars* shared = ((cpuParams*)param)->svars;
 int threadnum = ((cpuParams*)param)->threadNumber;
 int quant = ((cpuParams*)param)->svars->quantum;
@@ -257,11 +233,11 @@ int tracker = 0;
  while(1){
 
   sem_wait(&(shared->cpuSems[threadnum])); 
-  printf("made it 1 + quantum %d\n", quant); 
+   
   if(p == NULL){
 
    pthread_mutex_lock(&(shared->readyQLock));
-   printf("made it 2 \n");
+   
    if((shared->readyQ).head != NULL){
     int lowArrivalTime = 100;
     int index = 0;
@@ -270,58 +246,45 @@ int tracker = 0;
     p = (shared->readyQ).head->data;
 
     while(search != NULL){
-     
-     printf("made it 3 \n");    
+        
      if((search->data->arrivalTime) < (lowArrivalTime)){    
-      printf("made it 4 \n");
+      
       lowArrivalTime = ((search->data->arrivalTime));
       p = search->data;
       lowDex = index;
+
      }
      if(search->next != NULL){
       search = search->next;
      }else{
       search = NULL;
      }
-         index++;   
-     
-     printf("made it 5 + index %d\n", index);
+     index++;   
+    
    }
 
-      printf("made it 6 + lowdex %d\n", lowDex);
       p = Qremove((&(shared->readyQ)),lowDex); 
-      printf("made it 7\n");  
+      printf("Process %d has been scheduled\n", (p->PID));   
    
   }  
-   pthread_mutex_unlock(&(shared->readyQLock)); 
-    printf("made it 8 \n");
-   
-    
+   pthread_mutex_unlock(&(shared->readyQLock));    
   
   }
   
-   printf("made it 9 \n");
-
-  
-
   if(p != NULL){
    
    tracker++;
-   printf("burstRemaining %d\n", p->burstRemaining);
    p->burstRemaining = p->burstRemaining - 1;
 
-
-  printf("made it 10 \n");
    
   if(p->burstRemaining==0){
-   printf("Process %d has been scheduled\n", (p->PID));
+
    pthread_mutex_lock(&(shared->finishedQLock));
-    printf("made it 11 \n");
     Qinsert(&(shared->finishedQ),p);    
    pthread_mutex_unlock(&(shared->finishedQLock));
 
    p = NULL;
-  			
+   tracker = 0;			
    }
   }
    
@@ -342,7 +305,7 @@ int tracker = 0;
 
   }
 }
-
+//Shortest Remaining Time First: preemptive version of shortest job first 
 void* SRTFcpu (void* param){
 
 sharedVars* shared = ((cpuParams*)param)->svars;
@@ -352,11 +315,11 @@ sharedVars* shared = ((cpuParams*)param)->svars;
  while(1){
 
   sem_wait(&(shared->cpuSems[threadnum])); 
-  printf("made it 1 \n"); 
+   
   if(p == NULL){
 
    pthread_mutex_lock(&(shared->readyQLock));
-   printf("made it 2 \n");
+  
    if((shared->readyQ).head != NULL){
     int lowBurstRemain = 100;
     int index = 0;
@@ -365,10 +328,9 @@ sharedVars* shared = ((cpuParams*)param)->svars;
     p = (shared->readyQ).head->data;
 
     while(search != NULL){
-     
-     printf("made it 3 \n");    
+        
      if((search->data->burstRemaining) < (lowBurstRemain)){    
-      printf("made it 4 \n");
+     
       lowBurstRemain = ((search->data->burstRemaining));
       p = search->data;
       lowDex = index;
@@ -378,39 +340,27 @@ sharedVars* shared = ((cpuParams*)param)->svars;
      }else{
       search = NULL;
      }
-         index++;   
+     index++;   
      
-     printf("made it 5 + index %d\n", index);
    }
 
-      printf("made it 6 + lowdex %d\n", lowDex);
       p = Qremove((&(shared->readyQ)),lowDex); 
-      printf("made it 7\n");  
+      printf("Process %d has been scheduled\n", (p->PID)); 
    
   }  
    pthread_mutex_unlock(&(shared->readyQLock)); 
-    printf("made it 8 \n");
-   
     
-  
   }
-  
-   printf("made it 9 \n");
-
-  
 
   if(p != NULL){
    
-   printf("burstRemaining %d\n", p->burstRemaining);
+ 
    p->burstRemaining = p->burstRemaining - 1;
  
-
-  printf("made it 10 \n");
    
   if(p->burstRemaining==0){
-   printf("Process %d has been scheduled\n", (p->PID));
+ 
    pthread_mutex_lock(&(shared->finishedQLock));
-    printf("made it 11 \n");
     Qinsert(&(shared->finishedQ),p);    
    pthread_mutex_unlock(&(shared->finishedQLock));
 
@@ -420,19 +370,15 @@ sharedVars* shared = ((cpuParams*)param)->svars;
   }
 
   pthread_mutex_lock(&(shared->readyQLock));
-  printf("made it 12 \n");
-
+  
   if((shared->readyQ).head != NULL && p != NULL){
 
-   if(((shared->readyQ).head->data->burstRemaining)  <   (p->burstRemaining)){
-     printf("made it 13 \n");
+   if(((shared->readyQ).head->data->burstRemaining)  <   (p->burstRemaining)){//searches every step for a shorter process than the current
      
      p->requeued = true;
      Qinsert(&(shared->readyQ),p);
     
-    printf("made it 14 \n");
-    p = NULL;   
-    printf("made it 15 \n");
+     p = NULL;   
   }
 }
   pthread_mutex_unlock(&(shared->readyQLock));
@@ -442,21 +388,21 @@ sharedVars* shared = ((cpuParams*)param)->svars;
 
   }
 }
-
+//Preemptive Priority: same as SRTF but based on priority
 void* PPcpu (void* param){
 
-sharedVars* shared = ((cpuParams*)param)->svars;
+ sharedVars* shared = ((cpuParams*)param)->svars;
  int threadnum = ((cpuParams*)param)->threadNumber;
  process* p = NULL;
 
  while(1){
 
   sem_wait(&(shared->cpuSems[threadnum])); 
-  printf("made it 1 \n"); 
+   
   if(p == NULL){
 
    pthread_mutex_lock(&(shared->readyQLock));
-   printf("made it 2 \n");
+  
    if((shared->readyQ).head != NULL){
     int lowPriority = 100;
     int index = 0;
@@ -465,10 +411,9 @@ sharedVars* shared = ((cpuParams*)param)->svars;
     p = (shared->readyQ).head->data;
 
     while(search != NULL){
-     
-     printf("made it 3 \n");    
+         
      if((search->data->priority) < (lowPriority)){    
-      printf("made it 4 \n");
+      
       lowPriority = ((search->data->priority));
       p = search->data;
       lowDex = index;
@@ -480,37 +425,25 @@ sharedVars* shared = ((cpuParams*)param)->svars;
      }
          index++;   
      
-     printf("made it 5 + index %d\n", index);
+     
    }
 
-      printf("made it 6 + lowdex %d\n", lowDex);
       p = Qremove((&(shared->readyQ)),lowDex); 
-      printf("made it 7\n");  
+      printf("Process %d has been scheduled\n", (p->PID));
    
   }  
-   pthread_mutex_unlock(&(shared->readyQLock)); 
-    printf("made it 8 \n");
-   
-    
+   pthread_mutex_unlock(&(shared->readyQLock));  
   
   }
-  
-   printf("made it 9 \n");
-
-  
 
   if(p != NULL){
-   
-   printf("burstRemaining %d\n", p->burstRemaining);
+  
    p->burstRemaining = p->burstRemaining - 1;
- 
-
-  printf("made it 10 \n");
    
   if(p->burstRemaining==0){
-   printf("Process %d has been scheduled\n", (p->PID));
+   
    pthread_mutex_lock(&(shared->finishedQLock));
-    printf("made it 11 \n");
+   
     Qinsert(&(shared->finishedQ),p);    
    pthread_mutex_unlock(&(shared->finishedQLock));
 
@@ -520,25 +453,21 @@ sharedVars* shared = ((cpuParams*)param)->svars;
   }
 
   pthread_mutex_lock(&(shared->readyQLock));
-  printf("made it 12 \n");
 
   if((shared->readyQ).head != NULL && p != NULL){
 
    if(((shared->readyQ).head->data->priority)  <   (p->priority)){
-     printf("made it 13 \n");
-     
+ 
      p->requeued = true;
      Qinsert(&(shared->readyQ),p);
-    
-    printf("made it 14 \n");
+ 
     p = NULL;   
-    printf("made it 15 \n");
+   
   }
 }
   pthread_mutex_unlock(&(shared->readyQLock));
 
-  sem_post(&(shared->mainSem));
-  
+  sem_post(&(shared->mainSem));  
 
   }
 }
